@@ -8,33 +8,45 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-
+// 🔹 MongoDB connection cache (for Vercel serverless)
 let isConnected;
 async function connectDB() {
   if (isConnected) return;
   try {
     const db = await mongoose.connect(process.env.MONGO_URI);
     isConnected = db.connections[0].readyState;
-    console.log("Database connected");
+    console.log("✅ Database connected");
   } catch (err) {
-    console.error("DB Connection Failed:", err.message);
+    console.error("❌ DB Connection Failed:", err.message);
   }
 }
 
+// Schema/collection
 const credential = mongoose.model("credential", {}, "bulkmail");
 
+// 🔹 Health Check Route
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", message: "Backend is running fine" });
+});
+
+// 🔹 Send Email Route
 app.post("/sendemail", async (req, res) => {
   try {
-    await connectDB();  
+    await connectDB(); // ensure DB connection is ready
 
     const { msg, emailList } = req.body;
-    const data = await credential.find();
+
+    if (!emailList || emailList.length === 0) {
+      return res
+        .status(400)
+        .json({ success: false, error: "No emails provided" });
+    }
 
     const transporter = nodemailer.createTransport({
       service: "gmail",
       auth: {
-        user: process.env.MAIL_USER || data[0]?.user,
-        pass: process.env.MAIL_PASS || data[0]?.pass,
+        user: process.env.MAIL_USER,
+        pass: process.env.MAIL_PASS, // ⚠️ MUST be a Gmail App Password
       },
     });
 
@@ -45,7 +57,7 @@ app.post("/sendemail", async (req, res) => {
         subject: "A Message from Bulk Mail App",
         text: msg,
       });
-      console.log(" Sent to:", email);
+      console.log("📧 Sent to:", email);
     }
 
     res.json({ success: true });
@@ -55,5 +67,5 @@ app.post("/sendemail", async (req, res) => {
   }
 });
 
-
+// 👉 Export for Vercel (NO app.listen)
 module.exports = app;
